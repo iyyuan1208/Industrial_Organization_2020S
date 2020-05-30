@@ -1,6 +1,6 @@
 # Industrial_Organization_2020S
 
-Files here contain three set of works completed for a economic course titled "Empirical Method of Industrial Organization" during spring of 2020.
+Files here contain four sets of works completed for an economic course titled "Empirical Method of Industrial Organization" during the semester of spring 2020.
 
 ## Project 1
 
