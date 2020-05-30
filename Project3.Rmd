@@ -1,0 +1,567 @@
+---
+title: "Project 3"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(AER)
+library(nleqslv)
+library(pastecs)
+```
+
+```{r}
+data <- read_csv("OTC_Data.csv")
+```
+
+```{r}
+nrow(distinct(data,store)) 
+#73 distinct stores
+
+nrow(distinct(data,week)) 
+# 48 distinct weeks
+
+nrow(distinct(data,brand_name))*nrow(distinct(data,size)) 
+# 9 distinct products
+
+nrow(distinct(data,brand_name)) 
+# 3 distinct brands
+```
+
+calculate total sales and total expenditure of each store-week as well as market share and expenditure share (wi). Stone index and 18 variables for price and cost.
+
+```{r}
+data2 <- data
+data2 = data2[FALSE,]
+options(digits=3)
+for (i in unique(data$week)){
+  for (j in unique(data$store)){
+    test <- filter(data, week == i, store == j)   
+    test <- test %>% mutate(sales_total = sum(test$sales), mkt_share = (sales/sales_total)) 
+    
+    ty <- filter(test, brand_name == "Tylenol")
+    ad <- filter(test, brand_name == "Advil")
+    ba <- filter(test, brand_name == "Bayer")
+    
+    ty_total = sum(ty$sales*ty$price)
+    ad_total = sum(ad$sales*ad$price)
+    ba_total = sum(ba$sales*ba$price)
+    
+    test <- test %>% mutate(exp_total = ifelse(brand_name == "Tylenol", ty_total, ifelse(brand_name == "Advil", ad_total, ifelse(brand_name == "Bayer",ba_total, "NA")))) 
+    
+    test$exp_total = as.numeric(as.character(test$exp_total))
+    
+    test <- test %>% mutate(exp_share = (price*sales)/exp_total)
+    
+    ty <- filter(test, brand_name == "Tylenol")
+    ad <- filter(test, brand_name == "Advil")
+    ba <- filter(test, brand_name == "Bayer")
+    
+    ty <- ty %>% mutate(lprice = log(price))
+    ad <- ad %>% mutate(lprice = log(price))
+    ba <- ba %>% mutate(lprice = log(price))
+    
+    ty_stone = sum(ty$exp_share*ty$lprice)
+    ad_stone = sum(ad$exp_share*ad$lprice)
+    ba_stone = sum(ba$exp_share*ba$lprice)
+    
+    test <- test %>% mutate(stone = ifelse(brand_name == "Tylenol", ty_stone, ifelse(brand_name == "Advil", ad_stone, ifelse(brand_name == "Bayer",ba_stone, "NA")))) 
+    
+    test$stone = as.numeric(as.character(test$stone))
+    
+    test <- test %>% mutate(ty25p = price[1],ty50p = price[2], ty100p = price[3], ad25p = price[4], ad50p = price[5], ad100p = price[6], ba25p = price[7], ba50p = price[8], ba100p = price[9])
+    
+    test <- test %>% mutate(ty25c = cost[1],ty50c = cost[2], ty100c = cost[3], ad25c = cost[4], ad50c = cost[5], ad100c = cost[6], ba25c = cost[7], ba50c = cost[8], ba100c = cost[9])
+    
+    data2 <- rbind(data2, test)
+    }}
+```
+
+## summary statistics
+
+```{r}
+options(scipen=100)
+options(digits=3)
+
+## Tylenol
+ty25 <- filter(data2, brand_name == "Tylenol", size == "25")
+stat.desc(ty25, basic = F)
+# price: mean 3.42, sd 0.271
+# wholesale price: mean 2.182, sd 0.179
+# market share: mean 0.178, sd 0.057
+
+ty50 <- filter(data2, brand_name == "Tylenol", size == "50") 
+stat.desc(ty50, basic = F)
+# price: mean 4.942, sd 0.262
+# wholesale price: mean 3.672, sd 0.182
+# market share: mean 0.213, sd 0.0657
+
+ty100 <- filter(data2, brand_name == "Tylenol", size == "100")
+stat.desc(ty100, basic = F)
+# price: mean 4.942, sd 0.262
+# wholesale price: mean 3.672, sd 0.182
+# market share: mean 0.140, sd 0.053
+
+## Advil
+ad25 <- filter(data2, brand_name == "Advil", size == "25")
+stat.desc(ad25, basic = F)
+# price: mean 2.964, sd 0.199
+# wholesale price: mean 2.03, sd 0.071
+# market share: mean 0.144, sd 0.052
+
+ad50 <- filter(data2, brand_name == "Advil", size == "50")
+stat.desc(ad50, basic = F)
+# price: mean 5.145, sd 0.293
+# wholesale price: mean 3.623, sd 0.142
+# market share: mean 0.092, sd 0.055
+
+ad100 <- filter(data2, brand_name == "Advil", size == "100")
+stat.desc(ad100, basic = F)
+# price: mean 8.160, sd 0.344
+# wholesale price: mean 6.091, sd 0.226
+# market share: mean 0.043, sd 0.030
+
+
+## Bayer
+ba25 <- filter(data2, brand_name == "Bayer", size == "25")
+stat.desc(ba25, basic = F)
+# price: mean 2.673, sd 0.322
+# wholesale price: mean 1.847, sd 0.155
+# market share: mean 0.051, sd 0.029
+
+ba50 <- filter(data2, brand_name == "Bayer", size == "50")
+stat.desc(ba50, basic = F)
+# price: mean 3.607, sd 0.377
+# wholesale price: mean 2.422, sd 0.349
+# market share: mean 0.041, sd 0.027
+
+ba100 <- filter(data2, brand_name == "Bayer", size == "100")
+stat.desc(ba100, basic = F)
+# price: mean 3.967, sd 0.185
+# wholesale price: mean 3.712, sd 0.117
+# market share: mean 0.097, sd 0.045
+```
+
+
+```{r}
+options(scipen = 1)
+fit1 <- lm(log(sales) ~ log(price), data2)
+summary(fit1)
+# price elasticity of demand is -0.1406
+```
+
+```{r}
+# create 9 new dummy variables
+data2 <- data2 %>% mutate(ty25 = ifelse(brand_name == "Tylenol" & size == 25,1,0 ), 
+                          ty50 = ifelse(brand_name == "Tylenol" & size == 50,1,0 ), 
+                          ty100 = ifelse(brand_name == "Tylenol" & size == 100,1,0), 
+                          ad25 = ifelse(brand_name == "Advil" & size == 25,1,0),
+                          ad50 = ifelse(brand_name == "Advil" & size == 50,1,0),
+                          ad100 = ifelse(brand_name == "Advil" & size == 100,1,0), 
+                          ba25 = ifelse(brand_name == "Bayer" & size == 25,1,0), 
+                          ba50 = ifelse(brand_name == "Bayer" & size == 50,1,0), 
+                          ba100 = ifelse(brand_name == "Bayer" & size == 100,1,0))
+```
+
+```{r}
+# 27 interaction variables between log(price) and product dummies
+n = 42
+for (i in seq(33,35)){
+  for (j in  seq(15,17)){
+  data2[,n] = data2[,i]*log(data2[,j])
+  n <- n + 1
+  }
+}
+
+for (i in seq(36,38)){
+  for (j in  seq(18,20)){
+  data2[,n] = data2[,i]*log(data2[,j])
+  n <- n + 1
+  }
+}
+
+for (i in seq(39,41)){
+  for (j in  seq(21,23)){
+  data2[,n] = data2[,i]*log(data2[,j])
+  n <- n + 1
+  }
+}
+
+# 27 interaction variables between cost and product dummies for the IV model
+for (i in seq(33,35)){
+  for (j in  seq(24,26)){
+  data2[,n] = data2[,i]*data2[,j]
+  n <- n + 1
+  }
+}
+
+for (i in seq(36,38)){
+  for (j in  seq(27,29)){
+  data2[,n] = data2[,i]*data2[,j]
+  n <- n + 1
+  }
+}
+
+for (i in seq(39,41)){
+  for (j in  seq(30,32)){
+  data2[,n] = data2[,i]*data2[,j]
+  n <- n + 1
+  }
+}
+```
+
+## Lowest level stone price index
+
+Estimate the lowest level of the model using the Stone price index and without assuming symmetry of the $\gamma$.
+
+```{r}
+data2 <- data2 %>% mutate(lxoverp = log(exp_total)-stone)
+
+options(digits = 3)
+n = 97
+for (i in seq(33,41)){
+  data2[,n] = data2[,i]*data2[,96]
+  n = n + 1
+}
+
+# create a new data frame and keep only the columns in the regression.
+data3 <- data2
+data3[,c(1:12,14:32,69:96)]<- NULL
+
+fit2 <- lm(exp_share ~ ., data3)
+summary(fit2)
+```
+
+## Lowest level IV: wholesale price
+
+Estimate the lowest level of the model using IV, with cost as the instrument
+for price.
+
+```{r}
+data4 <- data2
+data4[,c(1:12,14:32,96)]<- NULL
+fit3 <- ivreg(exp_share ~ ty25 + ty50 + ty100 + ad25 + ad50 + ad100 + ba25 + ba50 + ba100 + ty25.1 + ty25.2 + ty25.3 + ty50.1 + ty50.2 + ty50.3 + ty100.1 + ty100.2 + ty100.3 + ad25.1 + ad25.2 + ad25.3 + ad50.1 + ad50.2 + ad50.3 + ad100.1 + ad100.2 + ad100.3 + ba25.1 + ba25.2 + ba25.3 + ba50.1 + ba50.2 + ba50.3 + ba100.1 + ba100.2 + ba100.3 + ty25.7 + ty50.7 + ty100.7 + ad25.7 + ad50.7 + ad100.7 + ba25.7 + ba50.7 + ba100.7 | ty25 + ty50 + ty100 + ad25 + ad50 + ad100 + ba25 + ba50 + ba100 + ty25.4 + ty25.5 + ty25.6 + ty50.4 + ty50.5 + ty50.6 + ty100.4 + ty100.5 + ty100.6 + ad25.4 + ad25.5 + ad25.6 + ad50.4 + ad50.5 + ad50.6 + ad100.4 + ad100.5 + ad100.6 + ba25.4 + ba25.5 + ba25.6 + ba50.4 + ba50.5 + ba50.6 + ba100.4 + ba100.5 + ba100.6 + ty25.7 + ty50.7 + ty100.7 + ad25.7 + ad50.7 + ad100.7 + ba25.7 + ba50.7 + ba100.7, data = data4)
+summary(fit3)
+```
+
+## Lowest level IV: Hausman instruments 
+
+Estimate the lowest level of the model using IV, using Hausman instruments
+for price.
+
+```{r}
+data5 <- data2
+data5 = data5[FALSE,]
+for (i in unique(data2$week)){
+  for (j in unique(data2$brand_name)){
+    for (k in unique(data2$size)){
+    test <- filter(data2, brand_name == j, week == i, size == k) 
+    test <- test %>% mutate(avgp = (sum(test$price)-price)/(nrow(test)-1))
+    data5 <- rbind(data5, test)
+    }}}
+data6 <- data5
+data6 = data6[FALSE,]
+for (i in unique(data5$week)){
+  for (j in unique(data$store)){
+    test <- filter(data5, week == i, store == j)
+    test <- test %>% mutate(ty25h = avgp[1],ty50h = avgp[2], ty100h = avgp[3], ad25h = avgp[4], ad50h = avgp[5], ad100h = avgp[6], ba25h = avgp[7], ba50h = avgp[8], ba100h = avgp[9])
+    data6 <- rbind(data6, test)
+  }
+}
+
+data6[,c(1:12,14:32,69:96,106)]<- NULL
+# 27 interaction variables between hausman instrument and product dummies
+n = 56
+for (i in seq(2,4)){
+  for (j in  seq(47,49)){
+  data6[,n] = data6[,i]*data6[,j]
+  n <- n + 1
+  }
+}
+
+for (i in seq(5,7)){
+  for (j in  seq(50,52)){
+  data6[,n] = data6[,i]*data6[,j]
+  n <- n + 1
+  }
+}
+
+for (i in seq(8,10)){
+  for (j in  seq(53,55)){
+  data6[,n] = data6[,i]*data6[,j]
+  n <- n + 1
+  }
+}
+
+
+fit4 <- ivreg(exp_share ~ ty25 + ty50 + ty100 + ad25 + ad50 + ad100 + ba25 + ba50 + ba100 + ty25.1 + ty25.2 + ty25.3 + ty50.1 + ty50.2 + ty50.3 + ty100.1 + ty100.2 + ty100.3 + ad25.1 + ad25.2 + ad25.3 + ad50.1 + ad50.2 + ad50.3 + ad100.1 + ad100.2 + ad100.3 + ba25.1 + ba25.2 + ba25.3 + ba50.1 + ba50.2 + ba50.3 + ba100.1 + ba100.2 + ba100.3 + ty25.7 + ty50.7 + ty100.7 + ad25.7 + ad50.7 + ad100.7 + ba25.7 + ba50.7 + ba100.7 | ty25 + ty50 + ty100 + ad25 + ad50 + ad100 + ba25 + ba50 + ba100 + ty25.4 + ty25.5 + ty25.6 + ty50.4 + ty50.5 + ty50.6 + ty100.4 + ty100.5 + ty100.6 + ad25.4 + ad25.5 + ad25.6 + ad50.4 + ad50.5 + ad50.6 + ad100.4 + ad100.5 + ad100.6 + ba25.4 + ba25.5 + ba25.6 + ba50.4 + ba50.5 + ba50.6 + ba100.4 + ba100.5 + ba100.6 + ty25.7 + ty50.7 + ty100.7 + ad25.7 + ad50.7 + ad100.7 + ba25.7 + ba50.7 + ba100.7, data = data6)
+summary(fit4)
+```
+
+## Middle level IV
+
+```{r}
+# start with a new set of data
+data7 <- data2
+data7= data7[FALSE,]
+
+for (i in unique(data2$week)){
+  for (j in unique(data2$store)){
+    test <- filter(data2, week == i, store == j)
+    
+    total1 = test$sales[1] + test$sales[2] + test$sales[3]
+    total2 =test$sales[4] + test$sales[5] + test$sales[6]
+    total3 = test$sales[7] + test$sales[8] + test$sales[9]
+    
+    test <- test[-c(2,3,5, 6,8,9),]
+    
+    test[,c(15:105)]<- NULL
+    
+    test <- test %>% mutate(totalq = ifelse(brand_name == "Tylenol", total1, ifelse(brand_name == "Advil", total2, ifelse(brand_name == "Bayer",total3, "NA")))) 
+    
+    test$totalq = as.numeric(as.character(test$totalq))
+    
+    test <- test %>% mutate(ty = ifelse(brand_name == "Tylenol", 1, 0),
+                            ad = ifelse(brand_name == "Advil",1,0),
+                            ba = ifelse(brand_name == "Bayer",1,0)) %>% mutate(exp_total2 = (sum(exp_total))) %>% mutate(stone_ty = test$stone[1],
+                            stone_ad = test$stone[2],
+                            stone_ba = test$stone[3])
+      
+    
+    data7<- rbind(data7,test)
+    
+  }}  
+
+n = 23
+for (i in seq(16,18)){
+  for (j in  seq(20,22)){
+  data7[,n] = data7[,i]*data7[,j]
+  n <- n + 1
+  }
+}
+for (i in seq(16,18)){
+  data7[,n] = data7[,i]*log(data7[,19])
+  n <- n + 1
+}
+
+fit5 <- lm(log(totalq) ~ ty + ad + ba + ty.1 + ty.2 + ty.3 + ad.1 + ad.2 + ad.3 + ba.1 + ba.2 + ba.3 + ty.4 + ad.4 + ba.4,data7)
+summary(fit5)
+```
+
+## Top level
+
+```{r}
+data8 <- data7
+data8= data8[FALSE,]
+income <- read_csv("OTC_Incomes.csv")
+
+for (i in unique(data7$week)){
+  for (j in unique(data7$store)){
+    test <- filter(data7, week == i, store == j)
+    income2 <- filter(income,week == i, store == j)
+    
+    test <- test %>% mutate(exp_share2 = exp_total/exp_total2) 
+    test <- test %>% mutate(overallstone = sum(test$exp_share2*test$stone))
+    test <- test %>% mutate(income = income2$average_income[1])
+    
+    test <- test[-c(2,3),]
+    
+    data8<- rbind(data8,test)
+    
+  }}  
+data8[,c(4:9,11:14,16:18,20:34)]<- NULL
+
+
+data8 <- cbind(data8,income)
+
+fit6 <- lm(log(sales_total)~overallstone+income, data8)
+summary(fit6)
+```
+
+## Compare across the models
+
+The model using the Hausman instrument is the most valid one. This is determined by looking at the sign of the estimated coefficients for the nine different own price elasticities. 
+
+For the original OLS model, own price elasticities: 6 out of 9 are negative.
+For the IV model with wholesale price as instrument, 4 out of 9 are negative.
+For the IV model with Hausman instrument, 7 out of 9 are negative. Therefore, the third model is the preferred specification. Its estimated coefficients will also be used to calculate the following conditional and unconditional elasticities.
+
+```{r}
+# average expenditure share for 9 products
+omega_i <- c(mean(ty25$exp_share), mean(ty50$exp_share),mean(ty100$exp_share),mean(ad25$exp_share),mean(ad50$exp_share),mean(ad100$exp_share),mean(ba25$exp_share),mean(ba50$exp_share),mean(ba100$exp_share))
+
+data9 <- data7
+data9 <- data9 %>% mutate(exp_share2 = exp_total/exp_total2)
+ty1 <- filter(data9, brand_name == "Tylenol")
+omega_ty = mean(ty1$exp_share2)
+ad1 <- filter(data9, brand_name == "Advil")
+omega_ad = mean(ad1$exp_share2)
+ba1 <- filter(data9, brand_name == "Bayer")
+omega_ba = mean(ba1$exp_share2)
+
+# average expenditrue share for 3 segments
+omega_g <- c(omega_ty,omega_ad,omega_ba)
+
+coef <- fit4$coefficients
+coef <- as.data.frame(coef)
+beta_i <- coef$coef[38:46]
+gamma_ij <- coef$coef[11:37]
+```
+
+## conditional elasticities:
+
+### Conditional Tyelenol
+
+```{r}
+## Tylenol25 with 25, 50, 100
+  ty25_25 = (1/omega_i[1])*(gamma_ij[1]+gamma_ij[1]-beta_i[1]*omega_i[1])-1
+  ty25_50 = (1/omega_i[1])*(gamma_ij[2]+gamma_ij[4]-beta_i[1]*omega_i[2])
+  ty25_100 = (1/omega_i[1])*(gamma_ij[3]+gamma_ij[7]-beta_i[1]*omega_i[3])
+## Tylenol50 with 25, 50, 100
+  ty50_25 = (1/omega_i[2])*(gamma_ij[2]+gamma_ij[4]-beta_i[2]*omega_i[1])
+  ty50_50 = (1/omega_i[2])*(gamma_ij[5]+gamma_ij[5]-beta_i[2]*omega_i[2])-1
+  ty50_100 = (1/omega_i[2])*(gamma_ij[6]+gamma_ij[8]-beta_i[2]*omega_i[3])
+## Tylenol100 with 25, 50, 100
+  ty100_25 = (1/omega_i[3])*(gamma_ij[3]+gamma_ij[7]-beta_i[3]*omega_i[1])
+  ty100_50 = (1/omega_i[3])*(gamma_ij[6]+gamma_ij[8]-beta_i[3]*omega_i[2])
+  ty100_100 = (1/omega_i[3])*(gamma_ij[9]+gamma_ij[9]-beta_i[3]*omega_i[3])-1
+con_ty <- c(ty25_25,ty25_50,ty25_100,ty50_25,ty50_50,ty50_100,ty100_25,ty100_50,ty100_100)
+dim(con_ty) <- c(3,3)
+con_ty
+```
+
+### Conditional Advil
+
+```{r}
+## Advil25 with 25, 50, 100
+  ad25_25 = (1/omega_i[4])*(gamma_ij[10]+gamma_ij[10]-beta_i[4]*omega_i[4])-1
+  ad25_50 = (1/omega_i[4])*(gamma_ij[2+9]+gamma_ij[4+9]-beta_i[4]*omega_i[5])
+  ad25_100 = (1/omega_i[4])*(gamma_ij[12]+gamma_ij[16]-beta_i[4]*omega_i[6])
+## Advil50 with 25, 50, 100
+  ad50_25 = (1/omega_i[5])*(gamma_ij[11]+gamma_ij[13]-beta_i[5]*omega_i[4])
+  ad50_50 = (1/omega_i[5])*(gamma_ij[14]+gamma_ij[14]-beta_i[5]*omega_i[5])-1
+  ad50_100 = (1/omega_i[5])*(gamma_ij[15]+gamma_ij[17]-beta_i[5]*omega_i[6])
+## Advil100 with 25, 50, 100
+  ad100_25 = (1/omega_i[6])*(gamma_ij[12]+gamma_ij[16]-beta_i[6]*omega_i[4])
+  ad100_50 = (1/omega_i[6])*(gamma_ij[15]+gamma_ij[17]-beta_i[6]*omega_i[5])
+  ad100_100 = (1/omega_i[6])*(gamma_ij[18]+gamma_ij[18]-beta_i[6]*omega_i[6])-1
+con_ad <- c(ad25_25,ad25_50,ad25_100,ad50_25,ad50_50,ad50_100,ad100_25,ad100_50,ad100_100)
+dim(con_ad) <- c(3,3)
+con_ad
+```
+
+### Conditional Bayer
+
+```{r}
+## Bayer25 with 25, 50, 100
+  ba25_25 = (1/omega_i[7])*(gamma_ij[19]+gamma_ij[19]-beta_i[7]*omega_i[7])-1
+  ba25_50 = (1/omega_i[7])*(gamma_ij[20]+gamma_ij[22]-beta_i[7]*omega_i[8])
+  ba25_100 = (1/omega_i[7])*(gamma_ij[21]+gamma_ij[25]-beta_i[7]*omega_i[9])
+## Bayer50 with 25, 50, 100
+  ba50_25 = (1/omega_i[8])*(gamma_ij[20]+gamma_ij[22]-beta_i[8]*omega_i[7])
+  ba50_50 = (1/omega_i[8])*(gamma_ij[23]+gamma_ij[23]-beta_i[8]*omega_i[8])-1
+  ba50_100 = (1/omega_i[8])*(gamma_ij[24]+gamma_ij[26]-beta_i[8]*omega_i[9])
+## Bayer100 with 25, 50, 100
+  ba100_25 = (1/omega_i[9])*(gamma_ij[21]+gamma_ij[25]-beta_i[9]*omega_i[7])
+  ba100_50 = (1/omega_i[9])*(gamma_ij[14]+gamma_ij[26]-beta_i[9]*omega_i[8])
+  ba100_100 = (1/omega_i[9])*(gamma_ij[27]+gamma_ij[27]-beta_i[9]*omega_i[9])-1
+con_ba <- c(ba25_25,ba25_50,ba25_100,ba50_25,ba50_50,ba50_100,ba100_25,ba100_50,ba100_100)
+dim(con_ba) <- c(3,3)
+con_ba
+```
+
+## Unconditional elasticities:
+
+### Unconditional Tyelenol
+
+```{r}
+delta_1 = fit6$coefficients[2]
+beta_g = fit5$coefficients[14:16]
+
+## Unconditional Tylenol25 with 25, 50, 100
+  ty25_25_Xg_Pj = omega_i[1]*(1+omega_g[1])+beta_g[1]*(omega_g[1]*omega_i[1])*(1+delta_1)
+  ty25_25_un = (1/omega_i[1])*(gamma_ij[1]+gamma_ij[1])+beta_i[1]*(ty25_25_Xg_Pj-omega_i[1])-1+ty25_25_Xg_Pj
+  ty25_50_Xg_Pj = omega_i[2]*(1+omega_g[1])+beta_g[1]*(omega_g[1]*omega_i[2])*(1+delta_1)
+  ty25_50_un = (1/omega_i[1])*(gamma_ij[2]+gamma_ij[4])+beta_i[1]*(ty25_50_Xg_Pj-omega_i[2])+ty25_50_Xg_Pj
+  ty25_100_Xg_Pj = omega_i[3]*(1+omega_g[1])+beta_g[1]*(omega_g[1]*omega_i[3])*(1+delta_1)
+  ty25_100_un = (1/omega_i[1])*(gamma_ij[3]+gamma_ij[7])+beta_i[1]*(ty25_100_Xg_Pj-omega_i[3])+ty25_100_Xg_Pj
+  
+  
+## Unconditional Tylenol50 with 25, 50, 100
+  ty50_25_Xg_Pj = omega_i[1]*(1+omega_g[1])+beta_g[1]*(omega_g[1]*omega_i[1])*(1+delta_1)
+  ty50_25_un = (1/omega_i[2])*(gamma_ij[2]+gamma_ij[4])+beta_i[2]*(ty50_25_Xg_Pj-omega_i[1])+ty50_25_Xg_Pj
+  ty50_50_Xg_Pj = omega_i[2]*(1+omega_g[1])+beta_g[1]*(omega_g[1]*omega_i[2])*(1+delta_1)
+  ty50_50_un = (1/omega_i[2])*(gamma_ij[5]+gamma_ij[5])+beta_i[2]*(ty50_50_Xg_Pj-omega_i[2])+ty50_50_Xg_Pj-1
+  ty50_100_Xg_Pj = omega_i[3]*(1+omega_g[1])+beta_g[1]*(omega_g[1]*omega_i[3])*(1+delta_1)
+  ty50_100_un = (1/omega_i[2])*(gamma_ij[6]+gamma_ij[8])+beta_i[2]*(ty50_100_Xg_Pj-omega_i[3])+ty50_100_Xg_Pj
+  
+## Unconditional Tylenol100 with 25, 50, 100
+  ty100_25_Xg_Pj = omega_i[1]*(1+omega_g[1])+beta_g[1]*(omega_g[1]*omega_i[1])*(1+delta_1)
+  ty100_25_un = (1/omega_i[3])*(gamma_ij[3]+gamma_ij[7])+beta_i[3]*(ty100_25_Xg_Pj-omega_i[1])+ty100_25_Xg_Pj
+  ty100_50_Xg_Pj = omega_i[2]*(1+omega_g[1])+beta_g[1]*(omega_g[1]*omega_i[2])*(1+delta_1)
+  ty100_50_un = (1/omega_i[3])*(gamma_ij[6]+gamma_ij[8])+beta_i[3]*(ty100_50_Xg_Pj-omega_i[2])+ty100_50_Xg_Pj
+  ty100_100_Xg_Pj = omega_i[3]*(1+omega_g[1])+beta_g[1]*(omega_g[1]*omega_i[3])*(1+delta_1)
+  ty100_100_un = (1/omega_i[3])*(gamma_ij[9]+gamma_ij[9])+beta_i[3]*(ty100_100_Xg_Pj-omega_i[3])+ty100_100_Xg_Pj-1
+uncon_ty <- c(ty25_25_un,ty25_50_un,ty25_100_un,ty50_25_un,ty50_50_un,ty50_100_un,ty100_25_un,ty100_50_un,ty100_100_un)
+dim(uncon_ty) <- c(3,3)
+uncon_ty
+```
+
+### Unconditional Advil
+
+
+```{r}
+ad_Xg_Pj_25 = omega_i[4]*(1+omega_g[2])+beta_g[2]*(omega_g[2]*omega_i[4])*(1+delta_1)
+ad_Xg_Pj_50 = omega_i[5]*(1+omega_g[2])+beta_g[2]*(omega_g[2]*omega_i[5])*(1+delta_1)
+ad_Xg_Pj_100 = omega_i[6]*(1+omega_g[2])+beta_g[2]*(omega_g[2]*omega_i[6])*(1+delta_1)
+
+## Unconditional Advil25 with 25, 50, 100
+  ad25_25_un = (1/omega_i[4])*(gamma_ij[10]+gamma_ij[10])+beta_i[4]*(ad_Xg_Pj_25-omega_i[4])-1+ad_Xg_Pj_25
+  ad25_50_un = (1/omega_i[4])*(gamma_ij[11]+gamma_ij[13])+beta_i[4]*(ad_Xg_Pj_50-omega_i[5])+ad_Xg_Pj_50
+  ad25_100_un = (1/omega_i[4])*(gamma_ij[12]+gamma_ij[16])+beta_i[4]*(ad_Xg_Pj_100-omega_i[6])+ad_Xg_Pj_100
+  
+  
+## Unconditional Advil50 with 25, 50, 100
+  ad50_25_un = (1/omega_i[5])*(gamma_ij[11]+gamma_ij[13])+beta_i[5]*(ad_Xg_Pj_25-omega_i[4])+ad_Xg_Pj_25
+  ad50_50_un = (1/omega_i[5])*(gamma_ij[14]+gamma_ij[14])+beta_i[5]*(ad_Xg_Pj_50-omega_i[5])+ad_Xg_Pj_50-1
+  ad50_100_un = (1/omega_i[5])*(gamma_ij[15]+gamma_ij[17])+beta_i[5]*(ad_Xg_Pj_100-omega_i[6])+ad_Xg_Pj_100
+  
+## Unconditional Advil100 with 25, 50, 100
+  ad100_25_un = (1/omega_i[6])*(gamma_ij[12]+gamma_ij[16])+beta_i[6]*(ad_Xg_Pj_25-omega_i[4])+ad_Xg_Pj_25
+  ad100_50_un = (1/omega_i[6])*(gamma_ij[15]+gamma_ij[17])+beta_i[6]*(ad_Xg_Pj_50-omega_i[5])+ad_Xg_Pj_50
+  ad100_100_un = (1/omega_i[6])*(gamma_ij[18]+gamma_ij[18])+beta_i[6]*(ad_Xg_Pj_100-omega_i[6])+ad_Xg_Pj_100-1
+uncon_ad<- c(ad25_25_un,ad25_50_un,ad25_100_un,ad50_25_un,ad50_50_un,ad50_100_un,ad100_25_un,ad100_50_un,ad100_100_un)
+dim(uncon_ad) <- c(3,3)
+uncon_ad
+```
+
+### Unconditional Bayer
+
+```{r}
+ba_Xg_Pj_25 = omega_i[7]*(1+omega_g[3])+beta_g[3]*(omega_g[3]*omega_i[7])*(1+delta_1)
+ba_Xg_Pj_50 = omega_i[8]*(1+omega_g[3])+beta_g[3]*(omega_g[3]*omega_i[8])*(1+delta_1)
+ba_Xg_Pj_100 = omega_i[9]*(1+omega_g[3])+beta_g[3]*(omega_g[3]*omega_i[9])*(1+delta_1)
+
+## Unconditional Advil25 with 25, 50, 100
+  ba25_25_un = (1/omega_i[7])*(gamma_ij[19]+gamma_ij[19])+beta_i[7]*(ba_Xg_Pj_25-omega_i[7])-1+ba_Xg_Pj_25
+  ba25_50_un = (1/omega_i[7])*(gamma_ij[20]+gamma_ij[22])+beta_i[7]*(ba_Xg_Pj_50-omega_i[8])+ba_Xg_Pj_50
+  ba25_100_un = (1/omega_i[7])*(gamma_ij[21]+gamma_ij[25])+beta_i[7]*(ba_Xg_Pj_100-omega_i[9])+ba_Xg_Pj_100
+  
+## Unconditional Advil50 with 25, 50, 100
+  ba50_25_un = (1/omega_i[8])*(gamma_ij[20]+gamma_ij[22])+beta_i[8]*(ba_Xg_Pj_25-omega_i[7])+ba_Xg_Pj_25
+  ba50_50_un = (1/omega_i[8])*(gamma_ij[23]+gamma_ij[23])+beta_i[8]*(ba_Xg_Pj_50-omega_i[8])+ba_Xg_Pj_50-1
+  ba50_100_un = (1/omega_i[8])*(gamma_ij[24]+gamma_ij[26])+beta_i[8]*(ba_Xg_Pj_100-omega_i[9])+ba_Xg_Pj_100
+  
+## Unconditional Advil100 with 25, 50, 100
+  ba100_25_un = (1/omega_i[9])*(gamma_ij[21]+gamma_ij[25])+beta_i[9]*(ba_Xg_Pj_25-omega_i[7])+ba_Xg_Pj_25
+  ba100_50_un = (1/omega_i[9])*(gamma_ij[24]+gamma_ij[26])+beta_i[9]*(ba_Xg_Pj_50-omega_i[8])+ba_Xg_Pj_50
+  ba100_100_un = (1/omega_i[9])*(gamma_ij[27]+gamma_ij[27])+beta_i[9]*(ba_Xg_Pj_100-omega_i[9])+ba_Xg_Pj_100-1
+  
+uncon_ba<- c(ba25_25_un,ba25_50_un,ba25_100_un,ba50_25_un,ba50_50_un,ba50_100_un,ba100_25_un,ba100_50_un,ba100_100_un)
+dim(uncon_ba) <- c(3,3)
+uncon_ba
+```
+
