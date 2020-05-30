@@ -1,0 +1,322 @@
+---
+title: "Project 4"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(AER)
+library(nleqslv)
+library(pastecs)
+```
+
+```{r}
+heat <- read_csv("heating_data.csv")
+```
+
+```{r}
+heat %>% summarise_if(is.numeric, mean)
+```
+
+```{r}
+prop.table(table(heat$choice))
+```
+
+7.1 % choose ec, 9.3 % choose er, 63.67 % choose gc, 14.33% choose gr, and 5.55 % choose hp
+
+## Multinomial logit model of demand ver.1
+
+IncludE only installation cost and operating cost as product characteristics. 
+
+```{r}
+beta <- c(.1,.1)
+multi_logit <- function(beta){
+  beta1 = beta[1]
+  beta2 = beta[2]
+  heat <- heat %>% mutate(v_igc = beta1*ic_gc+beta2*oc_gc, 
+                          v_igr = beta1*ic_gr+beta2*oc_gr,
+                          v_iec = beta1*ic_ec+beta2*oc_ec,
+                          v_ier = beta1*ic_er+beta2*oc_er,
+                          v_ihp = beta1*ic_hp+beta2*oc_hp)
+  
+  
+  heat <- heat %>% mutate(p_igc=exp(v_igc)/(exp(v_igc)+exp(v_igr)+exp(v_iec)+exp(v_ier)+exp(v_ihp)), 
+                          p_igr = exp(v_igr)/(exp(v_igc)+exp(v_igr)+exp(v_iec)+exp(v_ier)+exp(v_ihp)),
+                          p_iec = exp(v_iec)/(exp(v_igc)+exp(v_igr)+exp(v_iec)+exp(v_ier)+exp(v_ihp)),
+                          p_ier = exp(v_ier)/(exp(v_igc)+exp(v_igr)+exp(v_iec)+exp(v_ier)+exp(v_ihp)),
+                          p_ihp = exp(v_ihp)/(exp(v_igc)+exp(v_igr)+exp(v_iec)+exp(v_ier)+exp(v_ihp)))
+  
+  heat <- heat %>% mutate(pbeta = ifelse(choice == "gc", p_igc, ifelse(choice=="gr",p_igr,ifelse(choice=="ec",p_iec,ifelse(choice=="er",p_ier,ifelse(choice=="hp",p_ihp,"NA"))))))
+  
+  heat$pbeta <- as.numeric(heat$pbeta)
+  
+  lbeta = sum(log(heat$pbeta))
+  return(-lbeta)
+}
+optim(beta,multi_logit)
+```
+
+$\beta_1$ is -0.006231 and $\beta_2$ is -0.004754.
+
+If installation cost increases by 1 dollar, the operation cost decreases by 1.36 dollar, and this seems to be reasonable.
+
+```{r}
+# own elasticities
+
+  beta1 = -0.006231293
+  beta2 = -0.004574586
+  heat <- heat %>% mutate(v_igc = beta1*ic_gc+beta2*oc_gc, 
+                          v_igr = beta1*ic_gr+beta2*oc_gr,
+                          v_iec = beta1*ic_ec+beta2*oc_ec,
+                          v_ier = beta1*ic_er+beta2*oc_er,
+                          v_ihp = beta1*ic_hp+beta2*oc_hp)
+  
+  
+  heat <- heat %>% mutate(p_igc=exp(v_igc)/(exp(v_igc)+exp(v_igr)+exp(v_iec)+exp(v_ier)+exp(v_ihp)), 
+                          p_igr = exp(v_igr)/(exp(v_igc)+exp(v_igr)+exp(v_iec)+exp(v_ier)+exp(v_ihp)),
+                          p_iec = exp(v_iec)/(exp(v_igc)+exp(v_igr)+exp(v_iec)+exp(v_ier)+exp(v_ihp)),
+                          p_ier = exp(v_ier)/(exp(v_igc)+exp(v_igr)+exp(v_iec)+exp(v_ier)+exp(v_ihp)),
+                          p_ihp = exp(v_ihp)/(exp(v_igc)+exp(v_igr)+exp(v_iec)+exp(v_ier)+exp(v_ihp)))
+  
+  heat <- heat %>% mutate(e_gcic = beta1*(1-p_igc)*ic_gc, 
+                          e_gcoc = beta2*(1-p_igc)*oc_gc,
+                          e_gric = beta1*(1-p_igr)*ic_gr, 
+                          e_groc = beta2*(1-p_igr)*oc_gr,
+                          e_ecic = beta1*(1-p_iec)*ic_ec, 
+                          e_ecoc = beta2*(1-p_iec)*oc_ec,
+                          e_eric = beta1*(1-p_ier)*ic_er, 
+                          e_eroc = beta2*(1-p_ier)*oc_er,
+                          e_hpic = beta1*(1-p_ihp)*ic_hp, 
+                          e_hpoc = beta2*(1-p_ihp)*oc_hp,
+                          ) 
+heat %>% summarise_if(is.numeric, mean)
+
+```
+
+own elasticity gc for installation cost: -2.35, operation cost: -0.38
+own elasticity gr for installation cost: -4.40, operation cost: -0.54
+own elasticity ec for installation cost: -4.63, operation cost: -1.96
+own elasticity er for installation cost: -5.84, operation cost: -1.87
+own elasticity hp for installation cost: -5.98, operation cost: -0.92
+
+Consumers are relatively price elastic toward installtion costs and are relatively price inelastic toward operation costs. 
+
+## Multinomial logit model ver.2: with product fixed effects
+
+```{r}
+params <- c(.1,.1,.1,.1,.1,.1)
+multi_logit2 <- function(params){
+  delta1 = params[1]
+  delta2 = params[2]
+  delta3 = params[3]
+  delta4 = params[4]
+  beta1 = params[5]
+  beta2 = params[6]
+  heat <- heat %>% mutate(v_igc = delta1 + beta1*ic_gc+beta2*oc_gc, 
+                          v_igr = delta2 + beta1*ic_gr+beta2*oc_gr,
+                          v_iec = delta3 + beta1*ic_ec+beta2*oc_ec,
+                          v_ier = delta4 + beta1*ic_er+beta2*oc_er,
+                          v_ihp = beta1*ic_hp+beta2*oc_hp)
+  
+  
+  heat <- heat %>% mutate(p_igc=exp(v_igc)/(exp(v_igc)+exp(v_igr)+exp(v_iec)+exp(v_ier)+exp(v_ihp)), 
+                          p_igr = exp(v_igr)/(exp(v_igc)+exp(v_igr)+exp(v_iec)+exp(v_ier)+exp(v_ihp)),
+                          p_iec = exp(v_iec)/(exp(v_igc)+exp(v_igr)+exp(v_iec)+exp(v_ier)+exp(v_ihp)),
+                          p_ier = exp(v_ier)/(exp(v_igc)+exp(v_igr)+exp(v_iec)+exp(v_ier)+exp(v_ihp)),
+                          p_ihp = exp(v_ihp)/(exp(v_igc)+exp(v_igr)+exp(v_iec)+exp(v_ier)+exp(v_ihp)))
+  
+  heat <- heat %>% mutate(pbeta = ifelse(choice == "gc", p_igc, ifelse(choice=="gr",p_igr,ifelse(choice=="ec",p_iec,ifelse(choice=="er",p_ier,ifelse(choice=="hp",p_ihp,"NA"))))))
+  
+  heat$pbeta <- as.numeric(heat$pbeta)
+  
+  lbeta = sum(log(heat$pbeta))
+  return(-lbeta)
+}
+optim(params,multi_logit2)
+```
+
+Althuogh both cost coefficients (the last two numbers in the ouput) are negative, which are consistent with the previous estimates, their difference in magnitude still indicates that they are meaningfully different. Fixed effects are the first four numbers in the set of outputs. In the ranking of preferences from high to low are: electric room, electric central, gas central, heat pump, and gas room. 
+
+## Multinomial logit model ver.3: include interactions between income and the two cost variables.
+
+```{r}
+params2 <- c(.1,.1,.1,.1,.1,.1,.01,.01)
+multi_logit3 <- function(params){
+  delta1 = params[1]
+  delta2 = params[2]
+  delta3 = params[3]
+  delta4 = params[4]
+  beta1 = params[5]
+  beta2 = params[6]
+  beta3 = params[7]
+  beta4 = params[8]
+  
+  heat <- heat %>% mutate(v_igc = delta1 + beta1*ic_gc + beta2*oc_gc + beta3*ic_gc*income + beta4*oc_gc*income, 
+                          v_igr = delta2 + beta1*ic_gr+beta2*oc_gr + beta3*ic_gr*income + beta4*oc_gr*income,
+                          v_iec = delta3 + beta1*ic_ec+beta2*oc_ec + beta3*ic_ec*income + beta4*oc_ec*income,
+                          v_ier = delta4 + beta1*ic_er+beta2*oc_er + beta3*ic_er*income + beta4*oc_er*income,
+                          v_ihp = beta1*ic_hp + beta2*oc_hp + beta3*ic_hp*income + beta4*oc_hp*income)
+  
+  
+  heat <- heat %>% mutate(p_igc=exp(v_igc)/(exp(v_igc)+exp(v_igr)+exp(v_iec)+exp(v_ier)+exp(v_ihp)), 
+                          p_igr = exp(v_igr)/(exp(v_igc)+exp(v_igr)+exp(v_iec)+exp(v_ier)+exp(v_ihp)),
+                          p_iec = exp(v_iec)/(exp(v_igc)+exp(v_igr)+exp(v_iec)+exp(v_ier)+exp(v_ihp)),
+                          p_ier = exp(v_ier)/(exp(v_igc)+exp(v_igr)+exp(v_iec)+exp(v_ier)+exp(v_ihp)),
+                          p_ihp = exp(v_ihp)/(exp(v_igc)+exp(v_igr)+exp(v_iec)+exp(v_ier)+exp(v_ihp)))
+  
+  heat <- heat %>% mutate(pbeta = ifelse(choice == "gc", p_igc, ifelse(choice=="gr",p_igr,ifelse(choice=="ec",p_iec,ifelse(choice=="er",p_ier,ifelse(choice=="hp",p_ihp,"NA"))))))
+  
+  heat$pbeta <- as.numeric(heat$pbeta)
+  
+  lbeta = sum(log(heat$pbeta))
+  return(-lbeta)
+}
+optim(params2,multi_logit3)
+
+```
+
+Using the estimates with the highest income (7) and the lowest income (2), the difference is 1.12, so I would say that the price is not sensitive relative to income. This doesn't seem to be very reasonable.
+
+```{r}
+-1.254721e-01 + (-5.962660e-03*heat$ic_gc[1]) + (-5.086794e-03*heat$oc_gc[1]) + (-0.001298310*heat$ic_gc[1]*2) + (-0.002134820*heat$oc_gc[1]*2)
+
+-1.254721e-01 + (-5.962660e-03*heat$ic_gc[1]) + (-5.086794e-03*heat$oc_gc[1]) + (-0.001298310*heat$ic_gc[1]*7) + (-0.002134820*heat$oc_gc[1]*7)
+```
+
+## Multinomial logit model ver.4:  include interactions between income and the product fixed effects.
+
+fixed effect + interactions between income and the two cost variables + interactions between income and fixed effect
+
+```{r}
+params2 <- c(.1,.1,.1,.1,.1,.1,.01,.01)
+multi_logit4 <- function(params){
+  delta1 = params[1]
+  delta2 = params[2]
+  delta3 = params[3]
+  delta4 = params[4]
+  beta1 = params[5]
+  beta2 = params[6]
+  beta3 = params[7]
+  beta4 = params[8]
+  
+  heat <- heat %>% mutate(v_igc = delta1 + beta1*ic_gc + beta2*oc_gc + beta3*ic_gc*income + beta4*oc_gc*income + delta1*income, 
+                          v_igr = delta2 + beta1*ic_gr+beta2*oc_gr + beta3*ic_gr*income + beta4*oc_gr*income + delta2*income,
+                          v_iec = delta3 + beta1*ic_ec+beta2*oc_ec + beta3*ic_ec*income + beta4*oc_ec*income + delta3*income,
+                          v_ier = delta4 + beta1*ic_er+beta2*oc_er + beta3*ic_er*income + beta4*oc_er*income + delta4*income,
+                          v_ihp = beta1*ic_hp + beta2*oc_hp + beta3*ic_hp*income + beta4*oc_hp*income)
+  
+  
+  heat <- heat %>% mutate(p_igc=exp(v_igc)/(exp(v_igc)+exp(v_igr)+exp(v_iec)+exp(v_ier)+exp(v_ihp)), 
+                          p_igr = exp(v_igr)/(exp(v_igc)+exp(v_igr)+exp(v_iec)+exp(v_ier)+exp(v_ihp)),
+                          p_iec = exp(v_iec)/(exp(v_igc)+exp(v_igr)+exp(v_iec)+exp(v_ier)+exp(v_ihp)),
+                          p_ier = exp(v_ier)/(exp(v_igc)+exp(v_igr)+exp(v_iec)+exp(v_ier)+exp(v_ihp)),
+                          p_ihp = exp(v_ihp)/(exp(v_igc)+exp(v_igr)+exp(v_iec)+exp(v_ier)+exp(v_ihp)))
+  
+  heat <- heat %>% mutate(pbeta = ifelse(choice == "gc", p_igc, ifelse(choice=="gr",p_igr,ifelse(choice=="ec",p_iec,ifelse(choice=="er",p_ier,ifelse(choice=="hp",p_ihp,"NA"))))))
+  
+  heat$pbeta <- as.numeric(heat$pbeta)
+  
+  lbeta = sum(log(heat$pbeta))
+  return(-lbeta)
+}
+optim(params2,multi_logit4)
+```
+
+Using the estimates with the highest income (7) and the lowest income (2), the difference is 7.7532, so I would say that the price is sensitive relative to income, which seems to be reasonable. In the ranking of preferences from high to low are: electric central, electric room, gas room, heat pump, and gas central.
+
+## A nested logit version of the previous model
+
+Groups systems into nests based upon whether they are powered by gas or electricity (heat pumps are electric)/a central air system or a room system .
+
+```{r}
+# nested logit model grouped by electricity or gas
+# gas or electricity. gas : gc,gr; electric: ec,er,hp
+params3 <- c(.001,.001,.001,.001,.001,.001,.001,.001,.1,.1)
+multi_logit5 <- function(params){
+  delta1 = params[1]
+  delta2 = params[2]
+  delta3 = params[3]
+  delta4 = params[4]
+  beta1 = params[5]
+  beta2 = params[6]
+  beta3 = params[7]
+  beta4 = params[8]
+  lambda_e = params[9]
+  lambda_g = params[10]
+  
+  heat <- heat %>% mutate(v_igc = delta1 + beta1*ic_gc + beta2*oc_gc + beta3*ic_gc*income + beta4*oc_gc*income + delta1*income, 
+                          v_igr = delta2 + beta1*ic_gr+beta2*oc_gr + beta3*ic_gr*income + beta4*oc_gr*income + delta2*income,
+                          v_iec = delta3 + beta1*ic_ec+beta2*oc_ec + beta3*ic_ec*income + beta4*oc_ec*income + delta3*income,
+                          v_ier = delta4 + beta1*ic_er+beta2*oc_er + beta3*ic_er*income + beta4*oc_er*income + delta4*income,
+                          v_ihp = beta1*ic_hp + beta2*oc_hp + beta3*ic_hp*income + beta4*oc_hp*income)
+  
+  
+  
+  
+  heat <- heat %>% mutate(p_igc=exp(v_igc/lambda_g)*(exp(v_igc/lambda_g)+exp(v_igr/lambda_g))^(lambda_g-1)/((exp(v_igc/lambda_g)+exp(v_igr/lambda_g))^(lambda_g-1)+(exp(v_iec/lambda_e)+exp(v_ier/lambda_e)+exp(v_ihp/lambda_e))^(lambda_e-1)), 
+                          p_igr = exp(v_igr/lambda_g)*(exp(v_igc/lambda_g)+exp(v_igr/lambda_g))^(lambda_g-1)/((exp(v_igc/lambda_g)+exp(v_igr/lambda_g))^(lambda_g-1)+(exp(v_iec/lambda_e)+exp(v_ier/lambda_e)+exp(v_ihp/lambda_e))^(lambda_e-1)),
+                          p_iec = exp(v_iec/lambda_e)*(exp(v_iec/lambda_e)+exp(v_ier/lambda_e)+exp(v_ihp/lambda_e))^(lambda_e-1)/((exp(v_igc/lambda_g)+exp(v_igr/lambda_g))^(lambda_g-1)+(exp(v_iec/lambda_e)+exp(v_ier/lambda_e)+exp(v_ihp/lambda_e))^(lambda_e-1)),
+                          p_ier = exp(v_ier/lambda_e)*(exp(v_iec/lambda_e)+exp(v_ier/lambda_e)+exp(v_ihp/lambda_e))^(lambda_e-1)/((exp(v_igc/lambda_g)+exp(v_igr/lambda_g))^(lambda_g-1)+(exp(v_iec/lambda_e)+exp(v_ier/lambda_e)+exp(v_ihp/lambda_e))^(lambda_e-1)),
+                          p_ihp = exp(v_ihp/lambda_e)*(exp(v_iec/lambda_e)+exp(v_ier/lambda_e)+exp(v_ihp/lambda_e))^(lambda_e-1)/((exp(v_igc/lambda_g)+exp(v_igr/lambda_g))^(lambda_g-1)+(exp(v_iec/lambda_e)+exp(v_ier/lambda_e)+exp(v_ihp/lambda_e))^(lambda_e-1)))
+  
+  heat <- heat %>% mutate(pbeta = ifelse(choice == "gc", p_igc, ifelse(choice=="gr",p_igr,ifelse(choice=="ec",p_iec,ifelse(choice=="er",p_ier,ifelse(choice=="hp",p_ihp,"NA"))))))
+  
+  heat$pbeta <- as.numeric(heat$pbeta)
+  
+  lbeta = sum(log(heat$pbeta))
+  return(-lbeta)
+}
+optim(params3,multi_logit5)
+```
+
+```{r}
+# nested logit model grouped by central or room
+# central : gc,ec,hp; room: gr,er
+params4 <- c(.001,.001,.001,.001,.001,.001,.001,.001,.1,.1)
+multi_logit6 <- function(params){
+  delta1 = params[1]
+  delta2 = params[2]
+  delta3 = params[3]
+  delta4 = params[4]
+  beta1 = params[5]
+  beta2 = params[6]
+  beta3 = params[7]
+  beta4 = params[8]
+  lambda_c = params[9]
+  lambda_r = params[10]
+  
+  heat <- heat %>% mutate(v_igc = delta1 + beta1*ic_gc + beta2*oc_gc + beta3*ic_gc*income + beta4*oc_gc*income + delta1*income, 
+                          v_igr = delta2 + beta1*ic_gr+beta2*oc_gr + beta3*ic_gr*income + beta4*oc_gr*income + delta2*income,
+                          v_iec = delta3 + beta1*ic_ec+beta2*oc_ec + beta3*ic_ec*income + beta4*oc_ec*income + delta3*income,
+                          v_ier = delta4 + beta1*ic_er+beta2*oc_er + beta3*ic_er*income + beta4*oc_er*income + delta4*income,
+                          v_ihp = beta1*ic_hp + beta2*oc_hp + beta3*ic_hp*income + beta4*oc_hp*income)
+  
+  
+  
+  
+  heat <- heat %>% mutate(p_igc=exp(v_igc/lambda_c)*(exp(v_igc/lambda_c)+exp(v_iec/lambda_c)+exp(v_ihp/lambda_c))^(lambda_c-1)/((exp(v_igc/lambda_c)+exp(v_iec/lambda_c)+exp(v_ihp/lambda_c))^(lambda_c-1)+(exp(v_igr/lambda_r)+exp(v_ier/lambda_r))^(lambda_r-1)), 
+                          p_igr = exp(v_igr/lambda_r)*(exp(v_igr/lambda_r)+exp(v_ier/lambda_r))^(lambda_r-1)/((exp(v_igr/lambda_r)+exp(v_ier/lambda_r))^(lambda_r-1)+(exp(v_igc/lambda_c)+exp(v_iec/lambda_c)+exp(v_ihp/lambda_c))^(lambda_c-1)),
+                          p_iec = exp(v_iec/lambda_c)*(exp(v_igc/lambda_c)+exp(v_iec/lambda_c)+exp(v_ihp/lambda_c))^(lambda_c-1)/((exp(v_igc/lambda_c)+exp(v_iec/lambda_c)+exp(v_ihp/lambda_c))^(lambda_c-1)+(exp(v_igr/lambda_r)+exp(v_ier/lambda_r))^(lambda_r-1)),
+                          p_ier = exp(v_ier/lambda_r)*(exp(v_igr/lambda_r)+exp(v_ier/lambda_r))^(lambda_r-1)/((exp(v_igr/lambda_r)+exp(v_ier/lambda_r))^(lambda_r-1)+(exp(v_igc/lambda_c)+exp(v_iec/lambda_c)+exp(v_ihp/lambda_c))^(lambda_c-1)),
+                          p_ihp = exp(v_ihp/lambda_c)*(exp(v_igc/lambda_c)+exp(v_iec/lambda_c)+exp(v_ihp/lambda_c))^(lambda_c-1)/((exp(v_igc/lambda_c)+exp(v_iec/lambda_c)+exp(v_ihp/lambda_c))^(lambda_c-1)+(exp(v_igr/lambda_r)+exp(v_ier/lambda_r))^(lambda_r-1)))
+  
+  heat <- heat %>% mutate(pbeta = ifelse(choice == "gc", p_igc, ifelse(choice=="gr",p_igr,ifelse(choice=="ec",p_iec,ifelse(choice=="er",p_ier,ifelse(choice=="hp",p_ihp,"NA"))))))
+  
+  heat$pbeta <- as.numeric(heat$pbeta)
+  
+  lbeta = sum(log(heat$pbeta))
+  return(-lbeta)
+}
+optim(params4,multi_logit6)
+```
+
+```{r}
+optim(params3,multi_logit5)$par
+optim(params4,multi_logit6)$par
+
+```
+
+Comparing the estimates for the 10 parameters given by the two nested logit model, I would say that nesting decisions do impact my results. While some are relatively close in magnitude, some estimates change their signs and some others have significantly different values.
