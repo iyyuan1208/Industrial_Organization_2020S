@@ -1,0 +1,168 @@
+---
+title: "Project 2"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(AER)
+library(nleqslv)
+```
+
+```{r}
+data <- read_csv("C:/Users/Ivy Yuan/Documents/R/ECON132/naics5811.csv")
+```
+
+```{r}
+# 6-digit industry
+nrow(distinct(data,naics))
+
+# 3-digit industry
+data <- data %>% mutate(three_digit = floor(naics/1000))
+nrow(distinct(data,three_digit))
+```
+
+There are 473 distinct 6-digit codes and 21 distinct 3-digit codes.
+
+```{r}
+# OLS estimates
+fit <- lm(log(vship) ~ log(prodh) + log(cap), data)
+summary(fit)
+```
+
+With an estimated coefficient of 0.8827, log(cap) has a stroger impact on the output. 
+
+```{r}
+# beta2-beta1 in different years
+beta1 <- c()
+beta2 <- c()
+for (yr in seq(1958,2011)){
+  year_set <- filter(data, year == yr)
+  fit <- lm(log(vship) ~ log(prodh) + log(cap), year_set)
+  beta1 <- c(beta1, fit$coefficients[2])
+  beta2 <- c(beta2, fit$coefficients[3])
+}
+beta_diff <- beta2 - beta1
+plot(beta_diff)
+abline(h=0, col="red")
+```
+
+Description of the plot: As time progresses, the difference between beta2 and beta1 increases from being negative to positive, signifying that the effect on the output by capital becomes more significant than that of the labor. This also suggests that the relative efficiency of capital starts from being lower and progresses to become higher compare to labor. 
+
+```{r}
+# 3-digit max and min beta2-beta1 estimate difference
+threed_beta1 <- c()
+threed_beta2 <- c()
+three_digit <- c()
+for (i in unique(data$three_digit)){
+  # In the for-loop, filter data with each unique 3-digit code
+  digit_set <- filter(data, three_digit == i)
+  fit <- lm(log(vship) ~ log(prodh) + log(cap), digit_set)
+  threed_beta1 <- c(threed_beta1, fit$coefficients[2])
+  threed_beta2 <- c(threed_beta2, fit$coefficients[3])
+  three_digit <- c(three_digit, i)
+}
+threed_diff = threed_beta2-threed_beta1
+threed <- cbind(as.data.frame(threed_diff),as.data.frame(three_digit))
+
+max(threed$threed_diff)
+min(threed$threed_diff)
+```
+
+```{r}
+threed[which.max(threed$threed_diff),] 
+```
+
+Three digit is 324 when difference is the maximum, which refers to Petroleum and Coal Products Manufacturing.
+
+```{r}
+threed[which.min(threed$threed_diff),] 
+```
+
+Three digit is 315 when difference is the minimum, which refers to Apparel Manufacturing.
+
+The relative efficiency for capital is the highest for the petroleum manufacturing industry and lowest for the apparel manufacturing industry. This aligns with my expectations because the petroleum industry relies more heavily on capital (machines and instruments), whereas the apparel industry is quite labor intensive, which is shown by its lowest difference between beta2 and beta1.
+
+# Endogeneity problem with regression estimates
+
+Beta1 may be biased because of the endogeneity problem. Some omitted variables in the error term may still be correlated to labor. For example, productivity is a variable in the error term, and a highly productive firm may achieve the same level of output with fewer workers. Since productivity is correlated with labor, omitting it from the model may cause us to underestimate the true beta1.
+
+## IV model
+
+```{r}
+data <- data %>% mutate(hwage = prodw/prodh)
+fit2 <- ivreg(log(vship) ~ log(prodh) + log(cap) | hwage + log(cap), data = data)
+summary(fit2)
+```
+
+For the IV estimates, beta1 decreases to become negative (-0.81) while for beta2, it increases from 0.883 to 1.36 (relative to OLS). A negative and statistically significant beta1 means that, according to the model, an increase in labor should lead to a decrease in output.
+
+Wage is supposed to be a reasonable instrument, since (1) wage is correlated with labor, (2) it does not directly affect output, and (3) it is reasonable to argue that wage has zero covariance with the error term. IV estimates should be more credible than the OLS ones, because the IV approach attempts to address the endogeneity problem. However, the fact that beta1 is negative, which does not seem to reflect the reality (more labor should lead to more output), perhaps at the end, we should agree that wage is not the best instrument to use and we should consider switching to another instrument.
+
+In the case when we have chosen the wrong instrument, the estimates given by OLS is probably more credible that the ones given by the IV model.
+
+## Fixed Effect Model
+
+```{r}
+fit3 <- lm(log(vship) ~ log(prodh) + log(cap) + factor(naics) + factor(year),data)
+summary(fit3)
+```
+
+Estimates of beta1 and beta2 for different estimation approaches.
+OLS: beta1 0.12, beta2 0.883
+IV: beta1 -0.81, beta2 1.36
+fixed: 0.787, beta2 0.284
+
+We probably would never be able to say that any model is capable of completely resolving the endogeneity problem, but the fixed effect model seems a rather effective way to reduce the effect of a endogenous variable.
+
+Compare the three pairs of beta estimates above, I would say that since we have chosen a not so appropriate instrument for the IV model, we could not give a fair judgment of the effectiveness of it in resolving the endogeneity issue. Therefore, the fixed effect modle is perhaps the most credible one. 
+
+## Olley and Pakes model
+
+```{r}
+data <- data %>% mutate(cap_sq = (cap)^2, invest_sq = (invest)^2) 
+
+fit4 <- lm(log(vship) ~ log(prodh) + cap + invest + cap_sq + invest_sq + invest*cap,data)
+summary(fit4)
+```
+
+```{r}
+beta2_MOM <- function(beta2){
+  data <- data %>% mutate(h_it = 1.226e-04*cap + 1.302e-03*invest + -1.522e-09*cap_sq + -5.491e-08*invest_sq + -1.166e-09*cap*invest) %>% mutate(ome_it = h_it - beta2*log(cap))  
+
+  # create an empty data frame with all variable names of the orginal dataset
+  final <- data
+  final = final[FALSE,]
+  
+  for (i in unique(data$naics)){
+  naics_set <- filter(data, naics == i)
+  naics_set <- naics_set %>% mutate(ome_it_lag = lag(ome_it))
+  final <- rbind(final, naics_set)
+  }
+  
+  fit <- lm(ome_it ~ ome_it_lag, final)
+  rho0 <- fit$coefficients[1]
+  rho1 <- fit$coefficients[2]
+  
+  final <- final %>% mutate(rho0 = rho0, rho1 = rho1) %>% mutate(
+  xi = ome_it - rho0 - rho1*ome_it_lag)
+  
+  v <- mean(final$xi*final$cap, na.rm = TRUE)
+  return(v)
+}
+
+```
+
+
+```{r}
+library(nleqslv)
+beta2 <- 1
+nleqslv(beta2, beta2_MOM)
+
+# beta1 is 0.442, and beta2 is 0.63. 
+```
+
+Since beta1 + beta2 > 1, there is increasing returns to scale.
